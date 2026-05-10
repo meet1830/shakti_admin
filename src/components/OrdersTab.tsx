@@ -16,6 +16,10 @@ import Divider from "@mui/material/Divider";
 import Button from "@mui/material/Button";
 import IconButton from "@mui/material/IconButton";
 import Tooltip from "@mui/material/Tooltip";
+import Select from "@mui/material/Select";
+import MenuItem from "@mui/material/MenuItem";
+import FormControl from "@mui/material/FormControl";
+import CircularProgress from "@mui/material/CircularProgress";
 
 import { DataGrid, GridColDef, GridPaginationModel } from "@mui/x-data-grid";
 import { useEffect, useState, useCallback, useMemo } from "react";
@@ -24,6 +28,7 @@ import dynamic from "next/dynamic";
 import PhoneIcon from "@mui/icons-material/Phone";
 import PersonIcon from "@mui/icons-material/Person";
 import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
+import RefreshIcon from "@mui/icons-material/Refresh";
 import api from "@/lib/api";
 
 // Sub-components (Lazily loaded)
@@ -74,6 +79,7 @@ interface Order {
   orderPrice: number;
   address: UserAddress;
   phone: string;
+  status: "Order placed" | "Delivered" | "Cancelled";
   createdAt: string;
 }
 
@@ -97,6 +103,7 @@ export default function OrdersTab() {
   // Dialog states
   const [selectedUser, setSelectedUser] = useState<OrderUser | null>(null);
   const [selectedItems, setSelectedItems] = useState<OrderItem[] | null>(null);
+  const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
 
   const fetchSummary = useCallback(async () => {
     try {
@@ -160,40 +167,67 @@ export default function OrdersTab() {
     window.location.href = `tel:${phone}`;
   }, []);
 
+  const handleStatusUpdate = useCallback(async (orderId: string, newStatus: string) => {
+    try {
+      setUpdatingStatusId(orderId);
+      await api.patch("/order/admin/status", { orderId, status: newStatus });
+      setSnackbar({
+        show: true,
+        message: `Order status updated to "${newStatus}"`,
+        severity: "success"
+      });
+
+      // Update local state instead of re-fetching everything
+      setOrders(prevOrders =>
+        prevOrders.map(order =>
+          order._id === orderId ? { ...order, status: newStatus as any } : order
+        )
+      );
+    } catch (error: any) {
+      setSnackbar({
+        show: true,
+        message: error.response?.data?.message || "Failed to update order status",
+        severity: "error"
+      });
+    } finally {
+      setUpdatingStatusId(null);
+    }
+  }, [activeSubTab, fetchOrders, fetchSummary]);
+
   const columns: GridColDef[] = useMemo(() => [
     { field: "_id", headerName: "Order ID", width: 180 },
-    { 
-      field: "userName", 
-      headerName: "User Name", 
+    {
+      field: "userName",
+      headerName: "User Name",
       width: 150,
       valueGetter: (value, row) => row.user?.name || "N/A"
     },
-    { 
-      field: "address", 
-      headerName: "Address", 
+    {
+      field: "address",
+      headerName: "Address",
       width: 250,
       valueGetter: (value, row) => formatAddress(row.address)
     },
-    { 
-      field: "phone", 
-      headerName: "Phone", 
+    {
+      field: "phone",
+      headerName: "Phone",
       width: 200,
       align: 'center',
       headerAlign: 'center',
       renderCell: (params) => (
-        <Box sx={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'center', 
-          height: '100%', 
+        <Box sx={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100%',
           width: '100%',
           gap: 1.5
         }}>
           <Typography variant="body2" sx={{ fontWeight: 'medium' }}>{params.value}</Typography>
           <Tooltip title="Call User">
-            <IconButton 
-              size="small" 
-              color="primary" 
+            <IconButton
+              size="small"
+              color="primary"
               onClick={() => handleCall(params.value)}
               sx={{ bgcolor: 'primary.main', color: 'white', '&:hover': { bgcolor: 'primary.dark' } }}
             >
@@ -209,9 +243,9 @@ export default function OrdersTab() {
       width: 120,
       renderCell: (params) => (
         <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
-          <Button 
-            variant="outlined" 
-            size="small" 
+          <Button
+            variant="outlined"
+            size="small"
             startIcon={<PersonIcon />}
             onClick={() => setSelectedUser(params.row.user)}
           >
@@ -226,9 +260,9 @@ export default function OrdersTab() {
       width: 120,
       renderCell: (params) => (
         <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
-          <Button 
-            variant="outlined" 
-            size="small" 
+          <Button
+            variant="outlined"
+            size="small"
             startIcon={<ShoppingCartIcon />}
             onClick={() => setSelectedItems(params.row.orderItems)}
           >
@@ -237,37 +271,51 @@ export default function OrdersTab() {
         </Box>
       )
     },
-    { 
-      field: "orderPrice", 
-      headerName: "Price", 
+    {
+      field: "orderPrice",
+      headerName: "Price",
       width: 120,
       valueFormatter: (value: number) => value?.toLocaleString() || 0
     },
-    { 
-      field: "status", 
-      headerName: "Status", 
-      width: 130,
+    {
+      field: "status",
+      headerName: "Status",
+      width: 160,
       renderCell: (params) => (
-        <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
-          <Typography 
-            variant="caption" 
-            sx={{ 
-              px: 1, 
-              py: 0.5, 
-              borderRadius: 1, 
-              fontWeight: 'bold',
-              bgcolor: params.value === 'Order placed' ? 'warning.light' : params.value === 'Delivered' ? 'success.light' : 'error.light',
-              color: 'white'
-            }}
-          >
-            {params.value}
-          </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', height: '100%', width: '100%' }}>
+          {updatingStatusId === params.row._id ? (
+            <CircularProgress size={20} sx={{ ml: 2 }} />
+          ) : (
+            <FormControl fullWidth size="small">
+              <Select
+                value={params.value}
+                onChange={(e) => handleStatusUpdate(params.row._id, e.target.value)}
+                sx={{
+                  height: 35,
+                  fontSize: '0.75rem',
+                  fontWeight: 'bold',
+                  '& .MuiSelect-select': {
+                    bgcolor: params.value === 'Order placed' ? 'warning.light' : params.value === 'Delivered' ? 'success.light' : 'error.light',
+                    color: 'white',
+                    borderRadius: 1,
+                    py: 0.5,
+                    px: 1,
+                  },
+                  '& .MuiOutlinedInput-notchedOutline': { border: 'none' }
+                }}
+              >
+                <MenuItem value="Order placed">Order placed</MenuItem>
+                <MenuItem value="Delivered">Delivered</MenuItem>
+                <MenuItem value="Cancelled">Cancelled</MenuItem>
+              </Select>
+            </FormControl>
+          )}
         </Box>
       )
     },
-    { 
-      field: "createdAt", 
-      headerName: "Placed At", 
+    {
+      field: "createdAt",
+      headerName: "Placed At",
       width: 200,
       valueGetter: (value) => value ? new Date(value).toLocaleString() : ""
     },
@@ -278,7 +326,7 @@ export default function OrdersTab() {
       {itemsSummary.length > 0 ? itemsSummary.map((item, idx) => (
         <Box key={idx}>
           <ListItem sx={{ px: 0 }}>
-            <ListItemText 
+            <ListItemText
               primary={
                 <Typography variant="body1" sx={{ fontWeight: '600', color: 'primary.dark' }}>
                   {item.name} ({item.weight}) x {item.totalQuantity}
@@ -298,21 +346,34 @@ export default function OrdersTab() {
 
   return (
     <Box sx={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2, mt: '-10px' }}>
+      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2, mt: '-10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Tabs value={activeSubTab} onChange={handleTabChange} aria-label="orders sub-tabs">
           <Tab label="Current Orders" />
           <Tab label="All Orders" />
         </Tabs>
+        <Button
+          variant="contained"
+          size="small"
+          startIcon={<RefreshIcon />}
+          onClick={() => {
+            fetchOrders();
+            if (activeSubTab === 0) fetchSummary();
+          }}
+          disabled={tableLoading || loading}
+          sx={{ mt: 1.5, mr: 1, mb: 1, borderRadius: 2 }}
+        >
+          Refresh Data
+        </Button>
       </Box>
 
       {activeSubTab === 0 ? (
         <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', gap: 3, pr: 1 }}>
           {/* Top Cards Section using Flex for full width distribution */}
           <Box sx={{ display: 'flex', gap: 2, flexWrap: { xs: 'wrap', md: 'nowrap' } }}>
-            <Card sx={{ 
-              minWidth: { xs: '100%', md: 300 }, 
-              bgcolor: 'primary.main', 
-              color: 'primary.contrastText', 
+            <Card sx={{
+              minWidth: { xs: '100%', md: 300 },
+              bgcolor: 'primary.main',
+              color: 'primary.contrastText',
               boxShadow: 3,
               borderRadius: 2
             }}>
@@ -333,11 +394,11 @@ export default function OrdersTab() {
               </CardContent>
             </Card>
 
-            <Card sx={{ 
-              flexGrow: 1, 
-              maxHeight: 240, 
-              display: 'flex', 
-              flexDirection: 'column', 
+            <Card sx={{
+              flexGrow: 1,
+              maxHeight: 240,
+              display: 'flex',
+              flexDirection: 'column',
               boxShadow: 3,
               borderRadius: 2,
               width: '100%'
@@ -403,23 +464,23 @@ export default function OrdersTab() {
 
       {/* Optimized External Dialogs */}
       {selectedUser && (
-        <UserDetailDialog 
-          user={selectedUser} 
-          onClose={() => setSelectedUser(null)} 
-          formatAddress={formatAddress} 
-        />
-      )}
-      
-      {selectedItems && (
-        <OrderItemsDialog 
-          items={selectedItems} 
-          onClose={() => setSelectedItems(null)} 
+        <UserDetailDialog
+          user={selectedUser}
+          onClose={() => setSelectedUser(null)}
+          formatAddress={formatAddress}
         />
       )}
 
-      <Snackbar 
-        open={snackbar.show} 
-        autoHideDuration={6000} 
+      {selectedItems && (
+        <OrderItemsDialog
+          items={selectedItems}
+          onClose={() => setSelectedItems(null)}
+        />
+      )}
+
+      <Snackbar
+        open={snackbar.show}
+        autoHideDuration={6000}
         onClose={() => setSnackbar({ ...snackbar, show: false })}
       >
         <Alert severity={snackbar.severity} sx={{ width: '100%' }}>
