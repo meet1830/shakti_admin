@@ -14,7 +14,7 @@ interface User {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  loginWithOAuth: (authType: "google" | "apple", idToken: string) => Promise<void>;
+  loginWithOAuth: (authType: "google", idToken: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -34,7 +34,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoading(false);
   }, []);
 
-  const loginWithOAuth = async (authType: "google" | "apple", idToken: string) => {
+  const loginWithOAuth = async (authType: "google", idToken: string) => {
     try {
       const response = await api.post("/user/login", {
         authType,
