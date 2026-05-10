@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Shakti Admin Dashboard",
-  description: "Admin dashboard for Shakti Server",
+  title: "Patel Namkeen Admin Portal",
+  description: "Admin portal for Patel Namkeen",
 };
 
 export default function RootLayout({
